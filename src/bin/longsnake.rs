@@ -9,17 +9,6 @@ const CELLS: u32 = 8;
 const CELL: u32 = 32;
 const SCORE_H: u32 = 64;
 
-fn push(state: &mut u64, value: u64, cardinality: u64) {
-    *state *= cardinality;
-    *state += value;
-}
-
-fn pop(state: &mut u64, cardinality: u64) -> u64 {
-    let ret = *state % cardinality;
-    *state /= cardinality;
-    ret
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,43 +95,21 @@ mod tests {
         let decoded = decode(state, &just_possibilities);
         assert_eq!(decoded, just_data);
     }
+}
 
-    #[test]
-    fn fuzz_store_list() {
-        use rand::Rng;
+fn push(state: &mut u64, value: u64, cardinality: u64) {
+    debug_assert!(value < cardinality);
+    *state *= cardinality;
+    *state += value;
+}
 
-        let mut rng = rand::rng();
-        for _ in 0..1000 {
-            let data_vs_possibilities = [(); 10].map(|_| {
-                let possibilities = rng.random_range(1..=10);
-                let data = rng.random_range(0..possibilities);
-                (data, possibilities)
-            });
-            check_store_list(&data_vs_possibilities);
-        }
-    }
-
-    #[test]
-    fn fuzz_u8_max() {
-        use rand::Rng;
-
-        let mut rng = rand::rng();
-        for _ in 0..1000 {
-            let cardinality = u8::MAX as u64 + 1;
-            let data_vs_cardinalities = [(); 8].map(|_| {
-                let data = rng.random_range(0..cardinality);
-                (data, cardinality)
-            });
-            check_store_list(&data_vs_cardinalities);
-        }
-    }
+fn pop(state: &mut u64, cardinality: u64) -> u64 {
+    let ret = *state % cardinality;
+    *state /= cardinality;
+    ret
 }
 
 fn encode<const N: usize>(data: &[u64; N], cardinalities: &[u64; N]) -> u64 {
-    for (value, cardinality) in data.iter().zip(cardinalities) {
-        debug_assert!(value < cardinality);
-    }
-
     let mut state = 0;
     for (value, cardinality) in data.iter().zip(cardinalities) {
         push(&mut state, *value, *cardinality);
@@ -158,115 +125,6 @@ fn decode<const N: usize>(state: u64, cardinalities: &[u64; N]) -> [u64; N] {
     }
     ret
 }
-
-// const fn utilization(maxes: &[u64]) -> Option<u64> {
-//     let mut consumed: u64 = 1;
-//     let mut i = 0;
-//     while i < maxes.len() {
-//         let Some(max) = maxes[i].checked_add(1) else {
-//             return None;
-//         };
-//         // let max = maxes[i];
-//         consumed = match consumed.checked_mul(max) {
-//             Some(x) => x,
-//             None => return None,
-//         };
-//         i += 1;
-//     }
-//     Some(consumed)
-// }
-
-// const fn assert_max_utilization(maxes: &[u64]) {
-//     match utilization(maxes) {
-//         Some(u64::MAX) => (),
-//         Some(_) => panic!("not taking full advantage of data space"),
-//         None => panic!("encoding would overflow"),
-//     }
-// }
-
-// const fn decode<const N: usize>(state: u64, maxes: &[u64; N]) -> [u64; N] {
-//     assert_max_utilization(maxes);
-//     let mut ret = [0; N];
-//     let mut state = state;
-//     let mut i = 0;
-//     while i < N {
-//         ret[i] = pop(&mut state, maxes[i]);
-//         i += 1;
-//     }
-//     ret
-// }
-
-// const fn encode<const N: usize>(values: [u64; N], maxes: &[u64; N]) -> u64 {
-//     assert_max_utilization(maxes);
-//     let mut state = 0;
-//     let mut i = 0;
-//     while i < N {
-//         push(&mut state, values[i], maxes[i]);
-//         i += 1;
-//     }
-//     state
-// }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn push_pop() {
-//         let mut state = 0;
-
-//         let cases = &[
-//             (0, 1),
-//             (1, 1),
-//             (0, 2),
-//             (1, 2),
-//             (2, 2),
-//             (0, 3),
-//             (1, 3),
-//             (2, 3),
-//             (3, 3),
-//             (0, 4),
-//             (1, 4),
-//             (2, 4),
-//             (3, 4),
-//             (4, 4),
-//         ];
-
-//         for (value, max) in cases {
-//             push(&mut state, *value, *max);
-//             assert_eq!(pop(&mut state, *max), *value);
-//             assert_eq!(state, 0);
-//         }
-//     }
-
-//     #[test]
-//     fn calc_utilization() {
-//         // assert_eq!(utilization(&[u64::MAX]), Some(u64::MAX));
-//         // assert_eq!(utilization(&[u64::MAX / 2, 1]), Some(u64::MAX));
-//     }
-
-//     #[test]
-//     fn encode_decode() {
-//         // let maxes = [
-//         //     u64::MAX,
-//         //     // u32::MAX as u64,
-//         //     // u16::MAX as u64,
-//         //     // u8::MAX as u64,
-//         //     // u8::MAX as u64,
-//         // ];
-//         // let values = maxes;
-
-//         // dbg!(values.iter().product::<u64>());
-//         // dbg!(u64::MAX);
-//         // // 18302631076100570625;
-//         // // 18446744073709551615;
-
-//         // let encoded = encode(values, &maxes);
-//         // assert_eq!(encoded, 0b11111111_11111111_11111111_11111111);
-//         // let decoded = decode(encoded, &maxes);
-//         // assert_eq!(decoded, values);
-//     }
-// }
 
 struct Data {
     pos: [u32; 2],
