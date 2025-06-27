@@ -9,16 +9,143 @@ const CELLS: u8 = 8;
 const CELL: u8 = 32;
 const SCORE_H: u8 = 64;
 
-fn push(state: &mut u64, value: u64, cardinality: u64) {
-    debug_assert!(value < cardinality);
-    *state *= cardinality;
+fn set(state: &mut u64, value: u64) {
     *state += value;
 }
 
-fn pop(state: &mut u64, cardinality: u64) -> u64 {
-    let ret = *state % cardinality;
+fn ascend(state: &mut u64, next_cardinality: u64) {
+    *state *= next_cardinality;
+}
+
+fn get(state: u64, cardinality: u64) -> u64 {
+    state % cardinality
+}
+
+fn descend(state: &mut u64, cardinality: u64) {
     *state /= cardinality;
-    ret
+}
+
+fn encode<const N: usize>(data: &[u64; N], cardinalities: &[u64; N]) -> u64 {
+    let mut state = 0;
+    for (value, cardinality) in data.iter().zip(cardinalities) {
+        debug_assert!(*value < *cardinality);
+        ascend(&mut state, *cardinality); // first ascent is always a nop because state is 0
+        set(&mut state, *value);
+    }
+    state
+}
+
+fn decode<const N: usize>(state: u64, cardinalities: &[u64; N]) -> [u64; N] {
+    let mut result = [0; N];
+    let mut state = state;
+
+    for (i, cardinality) in cardinalities.iter().enumerate().rev() {
+        result[i] = get(state, *cardinality);
+        descend(&mut state, *cardinality);
+    }
+    result
+}
+
+// fn push(state: &mut u64, value: u64, cardinality: u64) {
+//     debug_assert!(value < cardinality);
+//     *state *= cardinality;
+//     *state += value;
+// }
+
+// fn pop(state: &mut u64, cardinality: u64) -> u64 {
+//     let ret = *state % cardinality;
+//     *state /= cardinality;
+//     ret
+// }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_no_data() {
+        let mut state = 0;
+
+        let unit = 0;
+        let cardinality = 1; // 1 possible state constitutes no data
+
+        set(&mut state, unit);
+        assert_eq!(get(state, cardinality), unit);
+    }
+
+    #[test]
+    fn store_one_bit() {
+        let cardinality = 2;
+
+        for bit in [0, 1] {
+            let mut state = 0;
+            set(&mut state, bit);
+            assert_eq!(get(state, cardinality), bit);
+        }
+    }
+
+    #[test]
+    fn store_more_than_one_but_less_than_two_bits() {
+        let cardinality = 3; // {0, 1, 2}
+
+        for value in [0, 1, 2] {
+            let mut state = 0;
+            set(&mut state, value);
+            assert_eq!(get(state, cardinality), value);
+        }
+    }
+
+    #[test]
+    fn store_one_bit_twice() {
+        let cardinality = 2;
+
+        for (a, b) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+            let mut state = 0;
+            set(&mut state, a);
+            ascend(&mut state, cardinality);
+            set(&mut state, b);
+            assert_eq!(get(state, cardinality), b);
+            descend(&mut state, cardinality);
+            assert_eq!(get(state, cardinality), a);
+        }
+    }
+
+    #[test]
+    fn store_list() {
+        check_store_list(&[
+            (0, 1), // nothing, zero bits of data being stored
+            (0, 2), // one bit
+            (1, 2),
+            (0, 3), // log2(3) ~= 1.585 bits
+            (1, 3),
+            (2, 3),
+            (0, 4), // log2(4) = 2 bits
+            (1, 4),
+            (2, 4),
+            (3, 4),
+            (0, 5), // log2(5) ~= 2.321 bits
+            (1, 5),
+            (2, 5),
+            (3, 5),
+            (4, 5),
+        ]);
+        check_store_list(&[(1, 2); 32]);
+        check_store_list(&[(2, 3); 40]); // 64 / 1.585 ~= 40.4
+        check_store_list(&[(4, 5); 27]); // 64 / 2.321 ~= 27.5
+        check_store_list(&[(u64::MAX - 1, u64::MAX)]);
+        check_store_list(&[(u8::MAX.into(), Into::<u64>::into(u8::MAX) + 1); 8]);
+        check_store_list(&[(u16::MAX.into(), Into::<u64>::into(u16::MAX) + 1); 4]);
+        check_store_list(&[(u32::MAX.into(), Into::<u64>::into(u32::MAX) + 1); 2]);
+    }
+
+    fn check_store_list<const N: usize>(data_vs_possibilities: &[(u64, u64); N]) {
+        let just_data = data_vs_possibilities.map(|(data, _)| data);
+        let just_possibilities = data_vs_possibilities.map(|(_, possibilities)| possibilities);
+
+        let state = encode(&just_data, &just_possibilities);
+        let decoded = decode(state, &just_possibilities);
+        assert_eq!(decoded, just_data);
+    }
 }
 
 #[derive(Clone, Default)]
@@ -48,53 +175,46 @@ impl Data {
             // - lifetime is explicit to ensure rustc doesn't elide it into something incorrect
             let ptr = self as *mut Self;
             [
-                (&mut (*ptr).pos[0], CELLS + 1),
-                (&mut (*ptr).pos[1], CELLS + 1),
-                (&mut (*ptr).dir, 5),
-                (&mut (*ptr).score, SCORE_H + 1),
-                (&mut (*ptr).fruit_pos[0], CELLS + 1),
-                (&mut (*ptr).fruit_pos[1], CELLS + 1),
-                (&mut (*ptr).tail[0], 5),
-                (&mut (*ptr).tail[1], 5),
-                (&mut (*ptr).tail[2], 5),
-                (&mut (*ptr).tail[3], 5),
-                (&mut (*ptr).tail[4], 5),
-                (&mut (*ptr).tail[5], 5),
-                (&mut (*ptr).tail[6], 5),
-                (&mut (*ptr).tail[7], 5),
-                (&mut (*ptr).tail[8], 5),
-                (&mut (*ptr).tail[9], 5),
-                (&mut (*ptr).tail[10], 5),
-                (&mut (*ptr).tail[11], 5),
-                (&mut (*ptr).tail[12], 5),
-                (&mut (*ptr).tail[13], 5),
-                (&mut (*ptr).tail[14], 5),
-                (&mut (*ptr).tail[15], 5),
-                (&mut (*ptr).tail[16], 5),
-                (&mut (*ptr).tail[17], 5),
-                (&mut (*ptr).tail[18], 5),
+                (&mut (*ptr).pos[0], CELLS),
+                (&mut (*ptr).pos[1], CELLS),
+                (&mut (*ptr).dir, 4),
+                (&mut (*ptr).score, SCORE_H),
+                (&mut (*ptr).fruit_pos[0], CELLS),
+                (&mut (*ptr).fruit_pos[1], CELLS),
+                (&mut (*ptr).tail[0], 4),
+                (&mut (*ptr).tail[1], 4),
+                (&mut (*ptr).tail[2], 4),
+                (&mut (*ptr).tail[3], 4),
+                (&mut (*ptr).tail[4], 4),
+                (&mut (*ptr).tail[5], 4),
+                (&mut (*ptr).tail[6], 4),
+                (&mut (*ptr).tail[7], 4),
+                (&mut (*ptr).tail[8], 4),
+                (&mut (*ptr).tail[9], 4),
+                (&mut (*ptr).tail[10], 4),
+                (&mut (*ptr).tail[11], 4),
+                (&mut (*ptr).tail[12], 4),
+                (&mut (*ptr).tail[13], 4),
+                (&mut (*ptr).tail[14], 4),
+                (&mut (*ptr).tail[15], 4),
+                (&mut (*ptr).tail[16], 4),
+                (&mut (*ptr).tail[17], 4),
+                (&mut (*ptr).tail[18], 4),
                 (&mut (*ptr).is_dead, 2),
             ]
         }
     }
 }
-// Uncomment the following lines to enable tests
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
 
-//     // assert the product of all cardinalities is less than 2^64
-//     #[test]
-//     fn test_cardinalities() {
-//         let mut product = 1u64;
-//         for (_, cardinality) in Data::default().mut_fields_and_cards() {
-//             product = product
-//                 .checked_mul(cardinality as u64)
-//                 .expect("Cardinalities overflowed");
-//         }
-//         assert!(product < (1u64 << 64));
-//     }
-// }
+#[cfg(test)]
+#[test]
+fn test_max_cardinality() {
+    let mut data = Data::default();
+    for (field, cardinality) in data.mut_fields_and_cards() {
+        *field = cardinality - 1;
+    }
+    make_state(data);
+}
 
 fn rand(seed: u64) -> u64 {
     let x = (seed.wrapping_mul(182099923) ^ seed).wrapping_add(8301719803) ^ seed;
@@ -102,29 +222,22 @@ fn rand(seed: u64) -> u64 {
 }
 
 fn make_state(data: Data) -> u64 {
-    let mut state = 0;
     let mut data = data;
-    let view = data.mut_fields_and_cards();
-    let view_len = view.len();
-    for (i, (field, cardinality)) in view.into_iter().enumerate() {
-        if i == view_len - 1 {
-            state += *field as u64;
-        } else {
-            push(&mut state, *field as u64, cardinality as u64);
-        }
-    }
-    state
+    let dats = data.mut_fields_and_cards().map(|(field, _)| *field as u64);
+    let cardinalities = data
+        .mut_fields_and_cards()
+        .map(|(_, cardinality)| cardinality as u64);
+    encode(&dats, &cardinalities)
 }
 
 fn from_state(state: u64) -> Data {
     let mut data = Data::default();
-    let mut state = state;
-    for (i, (field, cardinality)) in data.mut_fields_and_cards().into_iter().enumerate().rev() {
-        if i == 0 {
-            *field = state as u8;
-        } else {
-            *field = pop(&mut state, cardinality as u64) as u8;
-        }
+    let cardinalities = data
+        .mut_fields_and_cards()
+        .map(|(_, cardinality)| cardinality as u64);
+    let decoded = decode(state, &cardinalities);
+    for ((field, _), dat) in data.mut_fields_and_cards().into_iter().zip(decoded) {
+        *field = dat as u8;
     }
     data
 }
@@ -200,8 +313,8 @@ impl Game for Snake {
                 }
 
                 output.rect(
-                    (segment[0] * CELL) as i32,
-                    (segment[1] * CELL + SCORE_H) as i32,
+                    segment[0] as i32 * CELL as i32,
+                    segment[1] as i32 * CELL as i32 + SCORE_H as i32,
                     CELL.into(),
                     CELL.into(),
                     [0, i * 10, 255 - i * 10],
@@ -216,8 +329,8 @@ impl Game for Snake {
 
         // Draw fruit
         output.rect(
-            (data.fruit_pos[0] * CELL) as i32,
-            (data.fruit_pos[1] * CELL + SCORE_H) as i32,
+            data.fruit_pos[0] as i32 * CELL as i32,
+            data.fruit_pos[1] as i32 * CELL as i32 + SCORE_H as i32,
             CELL.into(),
             CELL.into(),
             [0, 255, 0],
