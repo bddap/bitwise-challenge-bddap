@@ -1,6 +1,8 @@
 //! A modified version of https://github.com/zesterer/bitwise-examples/blob/main/examples/snake.rs
 //! That packs data more densely using non-integer numbers of bits for some elements.
 
+use std::ops::{Add, Neg};
+
 use bitwise_challenge::{Game, Input, Key, Output};
 use bitwise_challenge_bddap::cheeky_encoding::{decode, encode};
 
@@ -9,16 +11,27 @@ struct Snake;
 const CELLS: u32 = 8;
 const CELL: u32 = 32;
 const SCORE_H: u32 = 64;
-const SCORE_MAX: u8 = 63;
+const SCORE_MAX: u8 = 19;
 const FIELD_COUNT: usize = 26;
 
 #[derive(Copy, Clone)]
 struct Turn(i8);
 
+impl Turn {
+    const LEFT: Self = Turn(-1);
+    const STRAIGHT: Self = Turn(0);
+    const RIGHT: Self = Turn(1);
+}
+
 #[derive(PartialEq, Copy, Clone)]
 struct Direction(i8);
 
 impl Direction {
+    const EAST: Self = Direction(0);
+    const NORTH: Self = Direction(1);
+    const WEST: Self = Direction(2);
+    const SOUTH: Self = Direction(3);
+
     fn front(self) -> [i32; 2] {
         match self.0 {
             0 => [1, 0],  // Right
@@ -30,7 +43,7 @@ impl Direction {
     }
 }
 
-impl std::ops::Neg for Direction {
+impl Neg for Direction {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -38,7 +51,7 @@ impl std::ops::Neg for Direction {
     }
 }
 
-impl std::ops::Add<Turn> for Direction {
+impl Add<Turn> for Direction {
     type Output = Self;
 
     fn add(self, turn: Turn) -> Self::Output {
@@ -51,7 +64,7 @@ struct Data {
     dir: Direction,
     score: u8,
     fruit_pos: [u32; 2],
-    tail: [u8; 19],
+    tail: [Turn; SCORE_MAX as usize],
     is_dead: bool,
 }
 
@@ -69,25 +82,25 @@ impl Data {
             self.score as u64,
             self.fruit_pos[0] as u64,
             self.fruit_pos[1] as u64,
-            self.tail[0] as u64,
-            self.tail[1] as u64,
-            self.tail[2] as u64,
-            self.tail[3] as u64,
-            self.tail[4] as u64,
-            self.tail[5] as u64,
-            self.tail[6] as u64,
-            self.tail[7] as u64,
-            self.tail[8] as u64,
-            self.tail[9] as u64,
-            self.tail[10] as u64,
-            self.tail[11] as u64,
-            self.tail[12] as u64,
-            self.tail[13] as u64,
-            self.tail[14] as u64,
-            self.tail[15] as u64,
-            self.tail[16] as u64,
-            self.tail[17] as u64,
-            self.tail[18] as u64,
+            (self.tail[0].0 + 1) as u64,
+            (self.tail[1].0 + 1) as u64,
+            (self.tail[2].0 + 1) as u64,
+            (self.tail[3].0 + 1) as u64,
+            (self.tail[4].0 + 1) as u64,
+            (self.tail[5].0 + 1) as u64,
+            (self.tail[6].0 + 1) as u64,
+            (self.tail[7].0 + 1) as u64,
+            (self.tail[8].0 + 1) as u64,
+            (self.tail[9].0 + 1) as u64,
+            (self.tail[10].0 + 1) as u64,
+            (self.tail[11].0 + 1) as u64,
+            (self.tail[12].0 + 1) as u64,
+            (self.tail[13].0 + 1) as u64,
+            (self.tail[14].0 + 1) as u64,
+            (self.tail[15].0 + 1) as u64,
+            (self.tail[16].0 + 1) as u64,
+            (self.tail[17].0 + 1) as u64,
+            (self.tail[18].0 + 1) as u64,
             self.is_dead as u64,
         ]
     }
@@ -128,25 +141,25 @@ impl Data {
             score: data[3] as u8,
             fruit_pos: [data[4] as u32, data[5] as u32],
             tail: [
-                data[6] as u8,
-                data[7] as u8,
-                data[8] as u8,
-                data[9] as u8,
-                data[10] as u8,
-                data[11] as u8,
-                data[12] as u8,
-                data[13] as u8,
-                data[14] as u8,
-                data[15] as u8,
-                data[16] as u8,
-                data[17] as u8,
-                data[18] as u8,
-                data[19] as u8,
-                data[20] as u8,
-                data[21] as u8,
-                data[22] as u8,
-                data[23] as u8,
-                data[24] as u8,
+                Turn(data[6] as i8 - 1),
+                Turn(data[7] as i8 - 1),
+                Turn(data[8] as i8 - 1),
+                Turn(data[9] as i8 - 1),
+                Turn(data[10] as i8 - 1),
+                Turn(data[11] as i8 - 1),
+                Turn(data[12] as i8 - 1),
+                Turn(data[13] as i8 - 1),
+                Turn(data[14] as i8 - 1),
+                Turn(data[15] as i8 - 1),
+                Turn(data[16] as i8 - 1),
+                Turn(data[17] as i8 - 1),
+                Turn(data[18] as i8 - 1),
+                Turn(data[19] as i8 - 1),
+                Turn(data[20] as i8 - 1),
+                Turn(data[21] as i8 - 1),
+                Turn(data[22] as i8 - 1),
+                Turn(data[23] as i8 - 1),
+                Turn(data[24] as i8 - 1),
             ],
             is_dead: data[25] == 1,
         }
@@ -168,6 +181,21 @@ fn move_dir(pos: [u32; 2], dir: Direction) -> [u32; 2] {
     [x + xd, y + yd].map(|c| ((c + CE) % CE) as u32)
 }
 
+fn rasterize_snek(
+    head: [u32; 2],
+    facing: Direction,
+    tail: &[Turn],
+) -> impl Iterator<Item = [u32; 2]> {
+    let mut segment = head;
+    let mut dir = -facing;
+
+    std::iter::once(segment).chain(tail.iter().map(move |&turn| {
+        segment = move_dir(segment, dir);
+        dir = dir + turn;
+        segment
+    }))
+}
+
 impl Game for Snake {
     const NAME: &'static str = "Snake";
     const WIDTH: usize = (CELLS * CELL) as usize;
@@ -179,7 +207,7 @@ impl Game for Snake {
             dir: Direction(0),
             score: 0,
             fruit_pos: [5, 3],
-            tail: [0; 19],
+            tail: [Turn(0); 19],
             is_dead: false,
         })
     }
@@ -187,9 +215,23 @@ impl Game for Snake {
     fn tick(prev: u64, input: &Input<'_, Self>, output: &mut Output<'_, Self>) -> u64 {
         let mut data = from_state(prev);
 
-        let mut grid = [[false; CELLS as usize]; CELLS as usize];
+        if data.is_dead {
+            output.rect(
+                0,
+                0,
+                CELLS * CELL,
+                SCORE_H,
+                [0, 0, if input.tick() % 16 < 8 { 255 } else { 0 }],
+            );
+            data.score += 1;
+            if data.score == SCORE_MAX {
+                return Self::init();
+            } else {
+                return make_state(data);
+            }
+        }
 
-        if input.tick() % 15 == 0 && !data.is_dead {
+        if input.tick() % 15 == 0 {
             data.pos = move_dir(data.pos, data.dir);
 
             if data.pos == data.fruit_pos {
@@ -202,7 +244,7 @@ impl Game for Snake {
             for i in (0..18).rev() {
                 data.tail[i + 1] = data.tail[i];
             }
-            data.tail[0] = (-data.dir).0 as u8;
+            data.tail[0] = Turn::STRAIGHT;
         }
 
         let new_dir = if input.is_key_down(Key::Right) {
@@ -217,31 +259,39 @@ impl Game for Snake {
             data.dir
         };
         if new_dir != -data.dir {
+            // todo: this can be more elegant using addition if we wind the directions properly
+            data.tail[0] = match (data.dir, new_dir) {
+                (Direction::NORTH, Direction::EAST)
+                | (Direction::EAST, Direction::SOUTH)
+                | (Direction::SOUTH, Direction::WEST)
+                | (Direction::WEST, Direction::NORTH) => Turn::RIGHT,
+                (Direction::NORTH, Direction::WEST)
+                | (Direction::WEST, Direction::SOUTH)
+                | (Direction::SOUTH, Direction::EAST)
+                | (Direction::EAST, Direction::NORTH) => Turn::LEFT,
+                _ => Turn::STRAIGHT,
+            };
             data.dir = new_dir;
         }
 
-        if !data.is_dead {
-            // Draw snake
-            let mut segment = data.pos;
-            for i in 0..data.score + 1 {
-                if i > 0 && segment == data.pos {
-                    data.is_dead = true;
-                    data.score = 0;
-                }
-
-                output.rect(
-                    (segment[0] * CELL) as i32,
-                    (segment[1] * CELL + SCORE_H) as i32,
-                    CELL,
-                    CELL,
-                    [0, i * 10, 255 - i * 10],
-                );
-                if let Some(dir) = data.tail.get(i as usize) {
-                    segment = move_dir(segment, Direction(*dir as i8));
-                } else {
-                    break;
-                }
+        for pos in rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]).skip(1) {
+            if pos == data.pos {
+                data.is_dead = true;
+                data.score = 0;
             }
+        }
+
+        for (i, pos) in
+            rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]).enumerate()
+        {
+            let i = i as u8;
+            output.rect(
+                (pos[0] * CELL) as i32,
+                (pos[1] * CELL + SCORE_H) as i32,
+                CELL,
+                CELL,
+                [0, i * 10, 255 - i * 10],
+            );
         }
 
         // Draw fruit
@@ -254,22 +304,8 @@ impl Game for Snake {
         );
 
         // Draw score
-        if data.is_dead {
-            output.rect(
-                0,
-                0,
-                CELLS * CELL,
-                SCORE_H,
-                [0, 0, if input.tick() % 16 < 8 { 255 } else { 0 }],
-            );
-            data.score += 1;
-            if data.score == SCORE_MAX {
-                return Self::init();
-            }
-        } else {
-            output.rect(0, 0, CELLS * CELL, SCORE_H, [100, 100, 100]);
-            output.rect(0, 0, data.score as u32 * 5, SCORE_H, [0, 255, 0]);
-        }
+        output.rect(0, 0, CELLS * CELL, SCORE_H, [100, 100, 100]);
+        output.rect(0, 0, data.score as u32 * 5, SCORE_H, [0, 255, 0]);
 
         make_state(data)
     }
