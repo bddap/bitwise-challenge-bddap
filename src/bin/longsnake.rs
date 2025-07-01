@@ -12,9 +12,43 @@ const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 63;
 const FIELD_COUNT: usize = 26;
 
+#[derive(Copy, Clone)]
+struct Turn(i8);
+
+#[derive(PartialEq, Copy, Clone)]
+struct Direction(i8);
+
+impl Direction {
+    fn front(self) -> [i32; 2] {
+        match self.0 {
+            0 => [1, 0],  // Right
+            1 => [0, -1], // Up
+            2 => [-1, 0], // Left
+            3 => [0, 1],  // Down
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl std::ops::Neg for Direction {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Direction((self.0 + 2) % 4)
+    }
+}
+
+impl std::ops::Add<Turn> for Direction {
+    type Output = Self;
+
+    fn add(self, turn: Turn) -> Self::Output {
+        Self((self.0 + turn.0) % 4)
+    }
+}
+
 struct Data {
     pos: [u32; 2],
-    dir: u32,
+    dir: Direction,
     score: u8,
     fruit_pos: [u32; 2],
     tail: [u8; 19],
@@ -31,7 +65,7 @@ impl Data {
         [
             self.pos[0] as u64,
             self.pos[1] as u64,
-            self.dir as u64,
+            self.dir.0 as u64,
             self.score as u64,
             self.fruit_pos[0] as u64,
             self.fruit_pos[1] as u64,
@@ -90,7 +124,7 @@ impl Data {
     fn from_u64s(data: [u64; FIELD_COUNT]) -> Self {
         Self {
             pos: [data[0] as u32, data[1] as u32],
-            dir: data[2] as u32,
+            dir: Direction(data[2] as i8),
             score: data[3] as u8,
             fruit_pos: [data[4] as u32, data[5] as u32],
             tail: [
@@ -127,6 +161,13 @@ fn from_state(state: u64) -> Data {
     Data::from_u64s(decode(state, &Data::CARDINALITIES))
 }
 
+fn move_dir(pos: [u32; 2], dir: Direction) -> [u32; 2] {
+    const CE: i32 = CELLS as i32;
+    let [xd, yd] = dir.front();
+    let [x, y] = pos.map(|c| c as i32);
+    [x + xd, y + yd].map(|c| ((c + CE) % CE) as u32)
+}
+
 impl Game for Snake {
     const NAME: &'static str = "Snake";
     const WIDTH: usize = (CELLS * CELL) as usize;
@@ -135,7 +176,7 @@ impl Game for Snake {
     fn init() -> u64 {
         make_state(Data {
             pos: [4, 4],
-            dir: 0,
+            dir: Direction(0),
             score: 0,
             fruit_pos: [5, 3],
             tail: [0; 19],
@@ -146,16 +187,7 @@ impl Game for Snake {
     fn tick(prev: u64, input: &Input<'_, Self>, output: &mut Output<'_, Self>) -> u64 {
         let mut data = from_state(prev);
 
-        fn move_dir(mut pos: [u32; 2], dir: u32) -> [u32; 2] {
-            match dir {
-                0 => pos[0] = (pos[0] + 1) % CELLS,
-                1 => pos[1] = (pos[1] + CELLS - 1) % CELLS,
-                2 => pos[0] = (pos[0] + CELLS - 1) % CELLS,
-                3 => pos[1] = (pos[1] + 1) % CELLS,
-                _ => unreachable!(),
-            }
-            pos
-        }
+        let mut grid = [[false; CELLS as usize]; CELLS as usize];
 
         if input.tick() % 15 == 0 && !data.is_dead {
             data.pos = move_dir(data.pos, data.dir);
@@ -170,21 +202,21 @@ impl Game for Snake {
             for i in (0..18).rev() {
                 data.tail[i + 1] = data.tail[i];
             }
-            data.tail[0] = (data.dir as u8 + 2) % 4;
+            data.tail[0] = (-data.dir).0 as u8;
         }
 
         let new_dir = if input.is_key_down(Key::Right) {
-            0
+            Direction(0)
         } else if input.is_key_down(Key::Left) {
-            2
+            Direction(2)
         } else if input.is_key_down(Key::Up) {
-            1
+            Direction(1)
         } else if input.is_key_down(Key::Down) {
-            3
+            Direction(3)
         } else {
             data.dir
         };
-        if new_dir != (data.dir + 2) % 4 {
+        if new_dir != -data.dir {
             data.dir = new_dir;
         }
 
@@ -205,7 +237,7 @@ impl Game for Snake {
                     [0, i * 10, 255 - i * 10],
                 );
                 if let Some(dir) = data.tail.get(i as usize) {
-                    segment = move_dir(segment, *dir as u32);
+                    segment = move_dir(segment, Direction(*dir as i8));
                 } else {
                     break;
                 }
