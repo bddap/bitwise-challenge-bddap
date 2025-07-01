@@ -1,17 +1,39 @@
-//! No idea what this encoding scheme is called. Surely somebody has invented it before.
+//! I'm not certain what this encoding scheme is called. Someone has likely invented it before.
 //!
-//! Think of encoding as getting an *offset* into an `N`-dimensional array where `cardinalities` is the tensors shape.
-//! An decoding is just the reverse of that.
+//! Think of encoding as obtaining an *offset* into an `N`-dimensional array, where `cardinalities` represents the tensor shape.
+//! Decoding is simply the reverse of that.
 //!
-//! Some nifty things about this:
-//! - Encode-decode must be FIFO (I think?)
-//! - You can encode into a variable-length integer if you have variable length data.
-//! - This makes for an interestingly flexible base for probabalisic compression like variable-length encoding.
+//! Some interesting points:
+//! - The encode-decode process must be FIFO (I believe).
+//! - You can encode into a variable-length integer. This is useful if the data size is variable.
+//! - This could be a flexible base for probabilistic compression, such as variable-length encoding.
 
+fn too_big(cardinalities: &[u64]) -> bool {
+    let mut product = 1u128;
+    for &cardinality in cardinalities {
+        product = product.checked_mul(cardinality.into()).unwrap_or(u128::MAX);
+    }
+    product > u64::MAX as u128 + 1
+}
+
+/// # The Rules
+///
+/// 1. Every value in `data` must be less than the corresponding value in `cardinalities`.
+/// 2. The product of all cardinalities must be no larger than `u64::MAX + 1`.
+/// 3. A cardinality of zero doesn't make sense.
+///
+/// Debug assertions will catch rule violations, in release you are on your own.
+///
+/// # Limitations
+///
+/// 1. This interface provides no way to store an item with cardinality `u64::MAX + 1` even
+///    though rule 2 would allow it. Sure we could probably take `maxes` instead of `cardinalities`.
+///    That would also make rule 3 unbreakable.
 pub fn encode<const N: usize>(data: &[u64; N], cardinalities: &[u64; N]) -> u64 {
+    debug_assert!(!too_big(cardinalities));
+
     let mut state = 0;
     for (value, cardinality) in data.iter().zip(cardinalities) {
-        debug_assert!(*value < *cardinality);
         // for the first element in `data`, the multiply in push is a nop because state is 0
         push(&mut state, *value, *cardinality);
     }
@@ -19,6 +41,8 @@ pub fn encode<const N: usize>(data: &[u64; N], cardinalities: &[u64; N]) -> u64 
 }
 
 pub fn decode<const N: usize>(state: u64, cardinalities: &[u64; N]) -> [u64; N] {
+    debug_assert!(!too_big(cardinalities));
+
     let mut result = [0; N];
     let mut state = state;
     for (i, cardinality) in cardinalities.iter().enumerate().rev() {
@@ -34,6 +58,7 @@ fn push(state: &mut u64, value: u64, cardinality: u64) {
 }
 
 fn pop(state: &mut u64, cardinality: u64) -> u64 {
+    debug_assert!(cardinality > 0);
     let ret = *state % cardinality;
     *state /= cardinality;
     ret
@@ -126,3 +151,4 @@ mod tests {
         check(&[(u32::MAX.into(), Into::<u64>::into(u32::MAX) + 1); 2]);
     }
 }
+
