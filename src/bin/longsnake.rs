@@ -1,7 +1,10 @@
 //! A modified version of https://github.com/zesterer/bitwise-examples/blob/main/examples/snake.rs
 //! That packs data more densely using non-integer numbers of bits for some elements.
 
-use std::ops::{Add, Neg};
+use std::{
+    iter::once,
+    ops::{Add, Neg},
+};
 
 use bitwise_challenge::{Game, Input, Key, Output};
 use bitwise_challenge_bddap::cheeky_encoding::{decode, encode};
@@ -14,7 +17,7 @@ const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
 const FIELD_COUNT: usize = 26;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct Turn(i8);
 
 impl Turn {
@@ -23,7 +26,7 @@ impl Turn {
     const RIGHT: Self = Turn(1);
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 struct Direction(i8);
 
 impl Direction {
@@ -41,6 +44,16 @@ impl Direction {
             _ => unreachable!(),
         }
     }
+
+    fn relative(self, other: Self) -> Option<Turn> {
+        match (self.0 - other.0 + 4) % 4 {
+            0 => Some(Turn::STRAIGHT),
+            1 => Some(Turn::RIGHT),
+            2 => None, // Opposite
+            3 => Some(Turn::LEFT),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Neg for Direction {
@@ -55,7 +68,7 @@ impl Add<Turn> for Direction {
     type Output = Self;
 
     fn add(self, turn: Turn) -> Self::Output {
-        Self((self.0 + turn.0) % 4)
+        Self((self.0 + turn.0 + 4) % 4)
     }
 }
 
@@ -112,25 +125,25 @@ impl Data {
         SCORE_MAX as u64 + 1,
         CELLS as u64,
         CELLS as u64,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
-        4,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
         2,
     ];
 
@@ -186,13 +199,12 @@ fn rasterize_snek(
     facing: Direction,
     tail: &[Turn],
 ) -> impl Iterator<Item = [u32; 2]> {
-    let mut segment = head;
+    let mut pos = head;
     let mut dir = -facing;
-
-    std::iter::once(segment).chain(tail.iter().map(move |&turn| {
-        segment = move_dir(segment, dir);
-        dir = dir + turn;
-        segment
+    once(pos).chain(tail.iter().map(move |turn| {
+        dir = dir + *turn;
+        pos = move_dir(pos, dir);
+        pos
     }))
 }
 
@@ -241,37 +253,30 @@ impl Game for Snake {
                 data.score += 1;
             }
 
-            for i in (0..18).rev() {
+            for i in (0..data.tail.len() - 1).rev() {
                 data.tail[i + 1] = data.tail[i];
             }
             data.tail[0] = Turn::STRAIGHT;
         }
 
         let new_dir = if input.is_key_down(Key::Right) {
-            Direction(0)
+            Direction::EAST
         } else if input.is_key_down(Key::Left) {
-            Direction(2)
+            Direction::WEST
         } else if input.is_key_down(Key::Up) {
-            Direction(1)
+            Direction::NORTH
         } else if input.is_key_down(Key::Down) {
-            Direction(3)
+            Direction::SOUTH
         } else {
             data.dir
         };
-        if new_dir != -data.dir {
-            // todo: this can be more elegant using addition if we wind the directions properly
-            data.tail[0] = match (data.dir, new_dir) {
-                (Direction::NORTH, Direction::EAST)
-                | (Direction::EAST, Direction::SOUTH)
-                | (Direction::SOUTH, Direction::WEST)
-                | (Direction::WEST, Direction::NORTH) => Turn::RIGHT,
-                (Direction::NORTH, Direction::WEST)
-                | (Direction::WEST, Direction::SOUTH)
-                | (Direction::SOUTH, Direction::EAST)
-                | (Direction::EAST, Direction::NORTH) => Turn::LEFT,
-                _ => Turn::STRAIGHT,
-            };
-            data.dir = new_dir;
+
+        match data.dir.relative(new_dir) {
+            Some(Turn::STRAIGHT) | None => {}
+            Some(turn) => {
+                data.tail[0] = turn;
+                data.dir = new_dir;
+            }
         }
 
         for pos in rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]).skip(1) {
@@ -337,5 +342,37 @@ mod tests {
             .map(Into::<u128>::into)
             .product::<u128>();
         assert_eq!(product * wasted_space, u64::MAX as u128 + 1);
+    }
+
+    #[test]
+    fn parameterized_turns() {
+        let test_cases = [
+            (Direction::EAST, Direction::NORTH, Some(Turn::LEFT)),
+            (Direction::NORTH, Direction::WEST, Some(Turn::LEFT)),
+            (Direction::WEST, Direction::SOUTH, Some(Turn::LEFT)),
+            (Direction::SOUTH, Direction::EAST, Some(Turn::LEFT)),
+            (Direction::EAST, Direction::SOUTH, Some(Turn::RIGHT)),
+            (Direction::NORTH, Direction::EAST, Some(Turn::RIGHT)),
+            (Direction::WEST, Direction::NORTH, Some(Turn::RIGHT)),
+            (Direction::SOUTH, Direction::WEST, Some(Turn::RIGHT)),
+            (Direction::EAST, Direction::EAST, Some(Turn::STRAIGHT)),
+            (Direction::NORTH, Direction::NORTH, Some(Turn::STRAIGHT)),
+            (Direction::WEST, Direction::WEST, Some(Turn::STRAIGHT)),
+            (Direction::SOUTH, Direction::SOUTH, Some(Turn::STRAIGHT)),
+            (Direction::EAST, Direction::WEST, None),
+            (Direction::NORTH, Direction::SOUTH, None),
+            (Direction::WEST, Direction::EAST, None),
+            (Direction::SOUTH, Direction::NORTH, None),
+        ];
+
+        for (from, to, expected) in test_cases {
+            assert_eq!(
+                from.relative(to),
+                expected,
+                "Testing from {:?} to {:?}",
+                from,
+                to
+            );
+        }
     }
 }
