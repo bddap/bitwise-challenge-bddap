@@ -12,27 +12,30 @@ const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
 const FIELD_COUNT: usize = 26;
 
-#[repr(i8)]
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
+// Easter egg: it is impossible to represent a 180 degree turn using
+// this structure so two quick subsequent turns will rotate the entire
+// the entire tail. We could gaurd against this, but the maneuver is
+// challenging to pull off so let's leave in for fun.
 enum Turn {
-    Left = -1,
-    Straight = 0,
-    Right = 1,
+    Left = 0,
+    Straight = 1,
+    Right = 2,
 }
 
-impl From<i8> for Turn {
-    fn from(value: i8) -> Self {
-        let value = value.wrapping_add(1).rem_euclid(3) - 1;
+impl From<u8> for Turn {
+    fn from(value: u8) -> Self {
         match value {
-            -1 => Self::Left,
-            0 => Self::Straight,
-            1 => Self::Right,
+            0 => Turn::Left,
+            1 => Turn::Straight,
+            2 => Turn::Right,
             _ => unreachable!(),
         }
     }
 }
 
-#[repr(i8)]
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Direction {
     East = 0,
@@ -41,17 +44,19 @@ enum Direction {
     South = 3,
 }
 
-impl Direction {
-    fn from_int(value: i8) -> Self {
+impl From<u8> for Direction {
+    fn from(value: u8) -> Self {
         match value % 4 {
-            0 => Self::East,
-            1 => Self::North,
-            2 => Self::West,
-            3 => Self::South,
+            0 => Direction::East,
+            1 => Direction::North,
+            2 => Direction::West,
+            3 => Direction::South,
             _ => unreachable!(),
         }
     }
+}
 
+impl Direction {
     fn front(self) -> [i32; 2] {
         match self {
             Self::East => [1, 0],
@@ -62,9 +67,8 @@ impl Direction {
     }
 
     fn relative(self, other: Self) -> Option<Turn> {
-        let s = self as i8;
-        let o = other as i8;
-        match (s - o + 4) % 4 {
+        let diff = (self as u8).wrapping_sub(other as u8).wrapping_rem(4);
+        match diff {
             0 => Some(Turn::Straight),
             1 => Some(Turn::Right),
             2 => None,
@@ -78,7 +82,7 @@ impl Neg for Direction {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        Self::from_int(self as i8 + 2)
+        (self as u8 + 2).into()
     }
 }
 
@@ -86,7 +90,7 @@ impl Add<Turn> for Direction {
     type Output = Self;
 
     fn add(self, turn: Turn) -> Self::Output {
-        Self::from_int(self as i8 + turn as i8 + 4)
+        (self as u8 + turn as u8 + 3).into()
     }
 }
 
@@ -115,25 +119,25 @@ impl Data {
             self.score as u64,
             self.fruit_pos[0] as u64,
             self.fruit_pos[1] as u64,
-            (self.tail[0] as i8 + 1) as u64,
-            (self.tail[1] as i8 + 1) as u64,
-            (self.tail[2] as i8 + 1) as u64,
-            (self.tail[3] as i8 + 1) as u64,
-            (self.tail[4] as i8 + 1) as u64,
-            (self.tail[5] as i8 + 1) as u64,
-            (self.tail[6] as i8 + 1) as u64,
-            (self.tail[7] as i8 + 1) as u64,
-            (self.tail[8] as i8 + 1) as u64,
-            (self.tail[9] as i8 + 1) as u64,
-            (self.tail[10] as i8 + 1) as u64,
-            (self.tail[11] as i8 + 1) as u64,
-            (self.tail[12] as i8 + 1) as u64,
-            (self.tail[13] as i8 + 1) as u64,
-            (self.tail[14] as i8 + 1) as u64,
-            (self.tail[15] as i8 + 1) as u64,
-            (self.tail[16] as i8 + 1) as u64,
-            (self.tail[17] as i8 + 1) as u64,
-            (self.tail[18] as i8 + 1) as u64,
+            self.tail[0] as u64,
+            self.tail[1] as u64,
+            self.tail[2] as u64,
+            self.tail[3] as u64,
+            self.tail[4] as u64,
+            self.tail[5] as u64,
+            self.tail[6] as u64,
+            self.tail[7] as u64,
+            self.tail[8] as u64,
+            self.tail[9] as u64,
+            self.tail[10] as u64,
+            self.tail[11] as u64,
+            self.tail[12] as u64,
+            self.tail[13] as u64,
+            self.tail[14] as u64,
+            self.tail[15] as u64,
+            self.tail[16] as u64,
+            self.tail[17] as u64,
+            self.tail[18] as u64,
             self.is_dead as u64,
         ]
     }
@@ -170,29 +174,29 @@ impl Data {
     fn from_u64s(data: [u64; FIELD_COUNT]) -> Self {
         Self {
             pos: [data[0] as u32, data[1] as u32],
-            dir: Direction::from_int(data[2] as i8),
+            dir: (data[2] as u8).into(),
             score: data[3] as u8,
             fruit_pos: [data[4] as u32, data[5] as u32],
             tail: [
-                (data[6] as i8 - 1).into(),
-                (data[7] as i8 - 1).into(),
-                (data[8] as i8 - 1).into(),
-                (data[9] as i8 - 1).into(),
-                (data[10] as i8 - 1).into(),
-                (data[11] as i8 - 1).into(),
-                (data[12] as i8 - 1).into(),
-                (data[13] as i8 - 1).into(),
-                (data[14] as i8 - 1).into(),
-                (data[15] as i8 - 1).into(),
-                (data[16] as i8 - 1).into(),
-                (data[17] as i8 - 1).into(),
-                (data[18] as i8 - 1).into(),
-                (data[19] as i8 - 1).into(),
-                (data[20] as i8 - 1).into(),
-                (data[21] as i8 - 1).into(),
-                (data[22] as i8 - 1).into(),
-                (data[23] as i8 - 1).into(),
-                (data[24] as i8 - 1).into(),
+                (data[6] as u8).into(),
+                (data[7] as u8).into(),
+                (data[8] as u8).into(),
+                (data[9] as u8).into(),
+                (data[10] as u8).into(),
+                (data[11] as u8).into(),
+                (data[12] as u8).into(),
+                (data[13] as u8).into(),
+                (data[14] as u8).into(),
+                (data[15] as u8).into(),
+                (data[16] as u8).into(),
+                (data[17] as u8).into(),
+                (data[18] as u8).into(),
+                (data[19] as u8).into(),
+                (data[20] as u8).into(),
+                (data[21] as u8).into(),
+                (data[22] as u8).into(),
+                (data[23] as u8).into(),
+                (data[24] as u8).into(),
             ],
             is_dead: data[25] == 1,
         }
