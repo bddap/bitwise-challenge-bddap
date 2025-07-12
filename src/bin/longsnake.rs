@@ -1,5 +1,5 @@
 //! A modified version of https://github.com/zesterer/bitwise-examples/blob/main/examples/snake.rs
-//! That packs data more densely using non-integer numbers of bits for some elements.
+//! It packs data more densely using non-integer numbers of bits for some elements.
 
 use std::{
     iter::once,
@@ -37,10 +37,10 @@ impl Direction {
 
     fn front(self) -> [i32; 2] {
         match self.0 {
-            0 => [1, 0],  // Right
-            1 => [0, -1], // Up
-            2 => [-1, 0], // Left
-            3 => [0, 1],  // Down
+            0 => [1, 0],
+            1 => [0, -1],
+            2 => [-1, 0],
+            3 => [0, 1],
             _ => unreachable!(),
         }
     }
@@ -49,7 +49,7 @@ impl Direction {
         match (self.0 - other.0 + 4) % 4 {
             0 => Some(Turn::STRAIGHT),
             1 => Some(Turn::RIGHT),
-            2 => None, // Opposite
+            2 => None,
             3 => Some(Turn::LEFT),
             _ => unreachable!(),
         }
@@ -188,17 +188,17 @@ fn from_state(state: u64) -> Data {
 }
 
 fn move_dir(pos: [u32; 2], dir: Direction) -> [u32; 2] {
-    const CE: i32 = CELLS as i32;
     let [xd, yd] = dir.front();
     let [x, y] = pos.map(|c| c as i32);
-    [x + xd, y + yd].map(|c| ((c + CE) % CE) as u32)
+    let ce = CELLS as i32;
+    [x + xd, y + yd].map(|c| ((c + ce) % ce) as u32)
 }
 
 fn rasterize_snek(
     head: [u32; 2],
     facing: Direction,
     tail: &[Turn],
-) -> impl Iterator<Item = [u32; 2]> {
+) -> impl Iterator<Item = [u32; 2]> + Clone {
     let mut pos = head;
     let mut dir = -facing;
     once(pos).chain(tail.iter().map(move |turn| {
@@ -238,9 +238,8 @@ impl Game for Snake {
             data.score += 1;
             if data.score == SCORE_MAX {
                 return Self::init();
-            } else {
-                return make_state(data);
             }
+            return make_state(data);
         }
 
         if input.tick() % 15 == 0 {
@@ -271,24 +270,22 @@ impl Game for Snake {
             data.dir
         };
 
-        match data.dir.relative(new_dir) {
-            Some(Turn::STRAIGHT) | None => {}
-            Some(turn) => {
-                data.tail[0] = turn;
-                data.dir = new_dir;
-            }
+        if let Some(turn) = data.dir.relative(new_dir)
+            && turn != Turn::STRAIGHT
+        {
+            data.tail[0] = turn;
+            data.dir = new_dir;
         }
 
-        for pos in rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]).skip(1) {
+        let snek_positions = rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]);
+        for pos in snek_positions.clone().skip(1) {
             if pos == data.pos {
                 data.is_dead = true;
                 data.score = 0;
             }
         }
 
-        for (i, pos) in
-            rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]).enumerate()
-        {
+        for (i, pos) in snek_positions.enumerate() {
             let i = i as u8;
             output.rect(
                 (pos[0] * CELL) as i32,
@@ -299,7 +296,6 @@ impl Game for Snake {
             );
         }
 
-        // Draw fruit
         output.rect(
             (data.fruit_pos[0] * CELL) as i32,
             (data.fruit_pos[1] * CELL + SCORE_H) as i32,
@@ -308,7 +304,6 @@ impl Game for Snake {
             [0, 255, 0],
         );
 
-        // Draw score
         output.rect(0, 0, CELLS * CELL, SCORE_H, [100, 100, 100]);
         output.rect(0, 0, data.score as u32 * 5, SCORE_H, [0, 255, 0]);
 
@@ -328,6 +323,7 @@ mod tests {
     fn encode_decode_cardinality() {
         let max = Data::CARDINALITIES.map(|cardinality| cardinality - 1);
         assert_eq!(Data::from_u64s(max).to_u64s(), max);
+
         let encoded = encode(&max, &Data::CARDINALITIES);
         let decoded = decode(encoded, &Data::CARDINALITIES);
         assert_eq!(decoded, max);
