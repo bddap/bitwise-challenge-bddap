@@ -12,12 +12,12 @@ const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
 const FIELD_COUNT: usize = 26;
 
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
 // Easter egg: it is impossible to represent a 180 degree turn using
 // this structure so two quick subsequent turns will rotate the entire
 // the entire tail. We could gaurd against this, but the maneuver is
 // challenging to pull off so let's leave in for fun.
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 enum Turn {
     Left = 0,
     Straight = 1,
@@ -67,7 +67,7 @@ impl Direction {
     }
 
     fn relative(self, other: Self) -> Option<Turn> {
-        let diff = (self as u8).wrapping_sub(other as u8).wrapping_rem(4);
+        let diff = (self as u8 + 4 - other as u8) % 4;
         match diff {
             0 => Some(Turn::Straight),
             1 => Some(Turn::Right),
