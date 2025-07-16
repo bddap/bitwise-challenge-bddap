@@ -12,10 +12,6 @@ const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
 const FIELD_COUNT: usize = 34;
 
-// Easter egg: it is impossible to represent a 180 degree turn using
-// this structure so two quick subsequent turns will rotate the entire
-// the entire tail. We could gaurd against this, but the maneuver is
-// challenging to pull off so let's leave in for fun.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Turn {
