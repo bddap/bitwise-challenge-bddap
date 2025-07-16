@@ -3,14 +3,14 @@ use std::{
     ops::{Add, Neg},
 };
 
-use bitwise_challenge::{Game, Input, Key, Output};
 use bitwise_challenge_bddap::cheeky_encoding::{decode, encode};
+use bitwise_challenge_bddap::game::{Game, Input, Key, Output};
 
 const CELLS: u32 = 8;
 const CELL: u32 = 32;
 const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
-const FIELD_COUNT: usize = 25;
+const FIELD_COUNT: usize = 34;
 
 // Easter egg: it is impossible to represent a 180 degree turn using
 // this structure so two quick subsequent turns will rotate the entire
@@ -22,6 +22,15 @@ enum Turn {
     Left = 0,
     Straight = 1,
     Right = 2,
+}
+impl Turn {
+    fn mirror(&self) -> Turn {
+        match self {
+            Turn::Left => Turn::Right,
+            Turn::Straight => Turn::Straight,
+            Turn::Right => Turn::Left,
+        }
+    }
 }
 
 impl From<u8> for Turn {
@@ -102,6 +111,8 @@ struct Data {
     score: u8,
     tail: [Turn; SCORE_MAX as usize],
     is_dead: bool,
+    input_q: [Turn; 8],
+    input_q_len: u8,
     pad: u64,
 }
 
@@ -114,6 +125,8 @@ impl Default for Data {
             tail: [Turn::Straight; 19],
             is_dead: false,
             pad: 0,
+            input_q: [Turn::Straight; 8],
+            input_q_len: 0,
         }
     }
 }
@@ -150,6 +163,15 @@ impl Data {
             self.tail[17] as u64,
             self.tail[18] as u64,
             self.is_dead as u64,
+            self.input_q[0] as u64,
+            self.input_q[1] as u64,
+            self.input_q[2] as u64,
+            self.input_q[3] as u64,
+            self.input_q[4] as u64,
+            self.input_q[5] as u64,
+            self.input_q[6] as u64,
+            self.input_q[7] as u64,
+            self.input_q_len as u64,
             self.pad,
         ]
     }
@@ -179,7 +201,16 @@ impl Data {
         3,
         3,
         2,
-        1549943,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        8,
+        29,
     ];
 
     fn from_u64s(data: [u64; FIELD_COUNT]) -> Self {
@@ -209,7 +240,18 @@ impl Data {
                 (data[22] as u8).into(),
             ],
             is_dead: data[23] == 1,
-            pad: data[24],
+            input_q: [
+                (data[24] as u8).into(),
+                (data[25] as u8).into(),
+                (data[26] as u8).into(),
+                (data[27] as u8).into(),
+                (data[28] as u8).into(),
+                (data[29] as u8).into(),
+                (data[30] as u8).into(),
+                (data[31] as u8).into(),
+            ],
+            input_q_len: data[32] as u8,
+            pad: data[33],
         }
     }
 }
@@ -222,7 +264,7 @@ fn from_state(state: u64) -> Data {
     Data::from_u64s(decode(state, &Data::CARDINALITIES))
 }
 
-fn move_dir(pos: [u32; 2], dir: Direction) -> [u32; 2] {
+fn shift(pos: [u32; 2], dir: Direction) -> [u32; 2] {
     let [xd, yd] = dir.front();
     let [x, y] = pos.map(|c| c as i32);
     let ce = CELLS as i32;
@@ -240,8 +282,8 @@ impl Game for Snake {
 
     fn tick(prev: u64, input: &Input<'_, Self>, output: &mut Output<'_, Self>) -> u64 {
         let mut data = from_state(prev);
-        data.update(input.tick());
         data.handle_input(input);
+        data.update(input.tick());
         data.render(output, input.tick());
         make_state(data)
     }
@@ -254,8 +296,8 @@ impl Data {
         let mut pos = self.pos;
         let mut dir = -self.dir;
         let tail = self.tail.iter().take(self.score as usize).map(move |turn| {
+            pos = shift(pos, dir);
             dir = dir + *turn;
-            pos = move_dir(pos, dir);
             pos
         });
 
@@ -269,24 +311,45 @@ impl Data {
         [x, y]
     }
 
-    fn handle_input(&mut self, input: &Input<'_, Snake>) {
-        let new_dir = if input.is_key_down(Key::Right) {
-            Direction::East
-        } else if input.is_key_down(Key::Left) {
-            Direction::West
-        } else if input.is_key_down(Key::Up) {
-            Direction::North
-        } else if input.is_key_down(Key::Down) {
-            Direction::South
-        } else {
-            self.dir
-        };
+    fn enqueue_turn(&mut self, inp: Turn) {
+        if self.input_q_len as usize == self.input_q.len() {
+            return;
+        }
+        self.input_q[self.input_q_len as usize] = inp;
+        self.input_q_len += 1;
+    }
 
-        if let Some(turn) = self.dir.relative(new_dir)
-            && turn != Turn::Straight
-        {
-            self.tail[0] = turn;
-            self.dir = new_dir;
+    fn dequeue_turn(&mut self) -> Turn {
+        if self.input_q_len == 0 {
+            return Turn::Straight;
+        }
+        self.input_q_len -= 1;
+        let ret = self.input_q[0];
+        self.input_q.rotate_left(1);
+        ret
+    }
+
+    /// what will the direction be once we have completed our turn queue
+    fn future_dir(&self) -> Direction {
+        let mut future_dir = self.dir;
+        for turn in &self.input_q[0..self.input_q_len as usize] {
+            future_dir = future_dir + *turn;
+        }
+        future_dir
+    }
+
+    fn handle_input(&mut self, input: &Input<'_, Snake>) {
+        for key in input.get_keys_pressed() {
+            let new_dir = match key {
+                Key::Right => Direction::East,
+                Key::Left => Direction::West,
+                Key::Up => Direction::North,
+                Key::Down => Direction::South,
+                _ => return,
+            };
+            if let Some(turn) = new_dir.relative(self.future_dir()) {
+                self.enqueue_turn(turn)
+            }
         }
     }
 
@@ -305,15 +368,17 @@ impl Data {
             return;
         }
 
-        if tick % 15 == 0 {
-            self.pos = move_dir(self.pos, self.dir);
-
-            if self.pos == self.fruit_pos() {
-                self.score += 1;
-            }
+        if tick % 16 == 0 {
+            let next_turn = self.dequeue_turn();
+            self.dir = self.dir + next_turn;
+            self.pos = shift(self.pos, self.dir);
 
             self.tail.rotate_right(1);
-            self.tail[0] = Turn::Straight;
+            self.tail[0] = next_turn.mirror();
+        }
+
+        if self.pos == self.fruit_pos() {
+            self.score += 1;
         }
 
         if self.segment_positions().skip(1).any(|pos| pos == self.pos) {
