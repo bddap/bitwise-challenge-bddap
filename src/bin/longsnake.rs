@@ -105,6 +105,19 @@ struct Data {
     is_dead: bool,
 }
 
+impl Default for Data {
+    fn default() -> Self {
+        Self {
+            pos: [4, 4],
+            dir: Direction::East,
+            score: 0,
+            fruit_pos: [5, 3],
+            tail: [Turn::Straight; 19],
+            is_dead: false,
+        }
+    }
+}
+
 fn rand(seed: u64) -> u64 {
     let x = (seed.wrapping_mul(182099923) ^ seed).wrapping_add(8301719803) ^ seed;
     x ^ seed ^ x.wrapping_div(21273)
@@ -218,70 +231,40 @@ fn move_dir(pos: [u32; 2], dir: Direction) -> [u32; 2] {
     [x + xd, y + yd].map(|c| ((c + ce) % ce) as u32)
 }
 
-fn rasterize_snek(
-    head: [u32; 2],
-    facing: Direction,
-    tail: &[Turn],
-) -> impl Iterator<Item = [u32; 2]> + Clone {
-    let mut pos = head;
-    let mut dir = -facing;
-    once(pos).chain(tail.iter().map(move |turn| {
-        dir = dir + *turn;
-        pos = move_dir(pos, dir);
-        pos
-    }))
-}
-
 impl Game for Snake {
     const NAME: &'static str = "Snake";
     const WIDTH: usize = (CELLS * CELL) as usize;
     const HEIGHT: usize = (CELLS * CELL + SCORE_H) as usize;
 
     fn init() -> u64 {
-        make_state(Data {
-            pos: [4, 4],
-            dir: Direction::East,
-            score: 0,
-            fruit_pos: [5, 3],
-            tail: [Turn::Straight; 19],
-            is_dead: false,
-        })
+        make_state(Default::default())
     }
 
     fn tick(prev: u64, input: &Input<'_, Self>, output: &mut Output<'_, Self>) -> u64 {
         let mut data = from_state(prev);
+        data.update(input.tick());
+        data.handle_input(input);
+        data.render(output, input.tick());
+        make_state(data)
+    }
+}
 
-        if data.is_dead {
-            output.rect(
-                0,
-                0,
-                CELLS * CELL,
-                SCORE_H,
-                [0, 0, if input.tick() % 16 < 8 { 255 } else { 0 }],
-            );
-            data.score += 1;
-            if data.score == SCORE_MAX {
-                return Self::init();
-            }
-            return make_state(data);
-        }
+impl Data {
+    fn segment_positions(&self) -> impl Iterator<Item = [u32; 2]> + '_ {
+        let head = once(self.pos);
 
-        if input.tick() % 15 == 0 {
-            data.pos = move_dir(data.pos, data.dir);
+        let mut pos = self.pos;
+        let mut dir = -self.dir;
+        let tail = self.tail.iter().take(self.score as usize).map(move |turn| {
+            dir = dir + *turn;
+            pos = move_dir(pos, dir);
+            pos
+        });
 
-            if data.pos == data.fruit_pos {
-                let x = rand(input.tick());
-                let y = rand(x);
-                data.fruit_pos = [x as u32 % CELLS, y as u32 % CELLS];
-                data.score += 1;
-            }
+        head.chain(tail)
+    }
 
-            for i in (0..data.tail.len() - 1).rev() {
-                data.tail[i + 1] = data.tail[i];
-            }
-            data.tail[0] = Turn::Straight;
-        }
-
+    fn handle_input(&mut self, input: &Input<'_, Snake>) {
         let new_dir = if input.is_key_down(Key::Right) {
             Direction::East
         } else if input.is_key_down(Key::Left) {
@@ -291,47 +274,83 @@ impl Game for Snake {
         } else if input.is_key_down(Key::Down) {
             Direction::South
         } else {
-            data.dir
+            self.dir
         };
 
-        if let Some(turn) = data.dir.relative(new_dir)
+        if let Some(turn) = self.dir.relative(new_dir)
             && turn != Turn::Straight
         {
-            data.tail[0] = turn;
-            data.dir = new_dir;
+            self.tail[0] = turn;
+            self.dir = new_dir;
         }
+    }
 
-        let snek_positions = rasterize_snek(data.pos, data.dir, &data.tail[..data.score as usize]);
-        for pos in snek_positions.clone().skip(1) {
-            if pos == data.pos {
-                data.is_dead = true;
-                data.score = 0;
+    fn update(&mut self, tick: u64) {
+        if self.is_dead {
+            if tick % 10 != 0 {
+                // run the death animation a bit longer
+                // to allow the player some agony
+                return;
             }
+            if self.score == 0 {
+                *self = Data::default();
+            } else {
+                self.score -= 1;
+            }
+            return;
         }
 
-        for (i, pos) in snek_positions.enumerate() {
+        if tick % 15 == 0 {
+            self.pos = move_dir(self.pos, self.dir);
+
+            if self.pos == self.fruit_pos {
+                let x = rand(tick);
+                let y = rand(x);
+                self.fruit_pos = [x as u32 % CELLS, y as u32 % CELLS];
+                self.score += 1;
+            }
+
+            for i in (0..self.tail.len() - 1).rev() {
+                self.tail[i + 1] = self.tail[i];
+            }
+            self.tail[0] = Turn::Straight;
+        }
+
+        if self.segment_positions().skip(1).any(|pos| pos == self.pos) {
+            self.is_dead = true;
+        }
+    }
+
+    fn render(&self, output: &mut Output<'_, Snake>, tick: u64) {
+        // snake
+        for (i, pos) in self.segment_positions().enumerate() {
+            let blue = {
+                let t = tick + i as u64;
+                let t = t % 16 * 16;
+                t as u8 * self.is_dead as u8
+            };
             let i = i as u8;
             output.rect(
                 (pos[0] * CELL) as i32,
                 (pos[1] * CELL + SCORE_H) as i32,
                 CELL,
                 CELL,
-                [0, i * 10, 255 - i * 10],
+                [blue, i * 10, 255 - i * 10],
             );
         }
 
+        // fruit
         output.rect(
-            (data.fruit_pos[0] * CELL) as i32,
-            (data.fruit_pos[1] * CELL + SCORE_H) as i32,
+            (self.fruit_pos[0] * CELL) as i32,
+            (self.fruit_pos[1] * CELL + SCORE_H) as i32,
             CELL,
             CELL,
             [0, 255, 0],
         );
 
+        // score
         output.rect(0, 0, CELLS * CELL, SCORE_H, [100, 100, 100]);
-        output.rect(0, 0, data.score as u32 * 5, SCORE_H, [0, 255, 0]);
-
-        make_state(data)
+        output.rect(0, 0, self.score as u32 * 5, SCORE_H, [0, 255, 0]);
     }
 }
 
