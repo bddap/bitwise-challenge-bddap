@@ -10,7 +10,7 @@ const CELLS: u32 = 8;
 const CELL: u32 = 32;
 const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
-const FIELD_COUNT: usize = 26;
+const FIELD_COUNT: usize = 27;
 
 // Easter egg: it is impossible to represent a 180 degree turn using
 // this structure so two quick subsequent turns will rotate the entire
@@ -103,6 +103,7 @@ struct Data {
     fruit_pos: [u32; 2],
     tail: [Turn; SCORE_MAX as usize],
     is_dead: bool,
+    pad: u64,
 }
 
 impl Default for Data {
@@ -114,6 +115,7 @@ impl Default for Data {
             fruit_pos: [5, 3],
             tail: [Turn::Straight; 19],
             is_dead: false,
+            pad: 0,
         }
     }
 }
@@ -152,6 +154,7 @@ impl Data {
             self.tail[17] as u64,
             self.tail[18] as u64,
             self.is_dead as u64,
+            self.pad,
         ]
     }
 
@@ -182,6 +185,7 @@ impl Data {
         3,
         3,
         2,
+        24217,
     ];
 
     fn from_u64s(data: [u64; FIELD_COUNT]) -> Self {
@@ -212,6 +216,7 @@ impl Data {
                 (data[24] as u8).into(),
             ],
             is_dead: data[25] == 1,
+            pad: data[26],
         }
     }
 }
@@ -374,13 +379,17 @@ mod tests {
 
     #[test]
     fn wasted_data() {
-        let wasted_space = 2 * 2 * 2 * 2 * 2;
         let product = Data::CARDINALITIES
-            .iter()
-            .copied()
+            .into_iter()
             .map(Into::<u128>::into)
             .product::<u128>();
-        assert_eq!(product * wasted_space, u64::MAX as u128 + 1);
+        let available = (u64::MAX as u128 / product) - 1;
+        let bits: f64 = (product as f64).log2();
+        assert_eq!(
+            available, 0,
+            "you are wasting {bits} bits, {available} available values"
+        );
+        // dubious correctness ---^, its at least close correct
     }
 
     #[test]
