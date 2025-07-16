@@ -10,7 +10,7 @@ const CELLS: u32 = 8;
 const CELL: u32 = 32;
 const SCORE_H: u32 = 64;
 const SCORE_MAX: u8 = 19;
-const FIELD_COUNT: usize = 27;
+const FIELD_COUNT: usize = 25;
 
 // Easter egg: it is impossible to represent a 180 degree turn using
 // this structure so two quick subsequent turns will rotate the entire
@@ -100,7 +100,6 @@ struct Data {
     pos: [u32; 2],
     dir: Direction,
     score: u8,
-    fruit_pos: [u32; 2],
     tail: [Turn; SCORE_MAX as usize],
     is_dead: bool,
     pad: u64,
@@ -112,7 +111,6 @@ impl Default for Data {
             pos: [4, 4],
             dir: Direction::East,
             score: 0,
-            fruit_pos: [5, 3],
             tail: [Turn::Straight; 19],
             is_dead: false,
             pad: 0,
@@ -132,8 +130,6 @@ impl Data {
             self.pos[1] as u64,
             self.dir as i8 as u64,
             self.score as u64,
-            self.fruit_pos[0] as u64,
-            self.fruit_pos[1] as u64,
             self.tail[0] as u64,
             self.tail[1] as u64,
             self.tail[2] as u64,
@@ -163,8 +159,6 @@ impl Data {
         CELLS as u64,
         4,
         SCORE_MAX as u64 + 1,
-        CELLS as u64,
-        CELLS as u64,
         3,
         3,
         3,
@@ -185,7 +179,7 @@ impl Data {
         3,
         3,
         2,
-        24217,
+        1549943,
     ];
 
     fn from_u64s(data: [u64; FIELD_COUNT]) -> Self {
@@ -193,8 +187,9 @@ impl Data {
             pos: [data[0] as u32, data[1] as u32],
             dir: (data[2] as u8).into(),
             score: data[3] as u8,
-            fruit_pos: [data[4] as u32, data[5] as u32],
             tail: [
+                (data[4] as u8).into(),
+                (data[5] as u8).into(),
                 (data[6] as u8).into(),
                 (data[7] as u8).into(),
                 (data[8] as u8).into(),
@@ -212,11 +207,9 @@ impl Data {
                 (data[20] as u8).into(),
                 (data[21] as u8).into(),
                 (data[22] as u8).into(),
-                (data[23] as u8).into(),
-                (data[24] as u8).into(),
             ],
-            is_dead: data[25] == 1,
-            pad: data[26],
+            is_dead: data[23] == 1,
+            pad: data[24],
         }
     }
 }
@@ -269,6 +262,13 @@ impl Data {
         head.chain(tail)
     }
 
+    fn fruit_pos(&self) -> [u32; 2] {
+        let r = rand(self.score.into()) as u32;
+        let x = r % CELLS;
+        let y = (r / CELLS) % CELLS;
+        [x, y]
+    }
+
     fn handle_input(&mut self, input: &Input<'_, Snake>) {
         let new_dir = if input.is_key_down(Key::Right) {
             Direction::East
@@ -308,16 +308,11 @@ impl Data {
         if tick % 15 == 0 {
             self.pos = move_dir(self.pos, self.dir);
 
-            if self.pos == self.fruit_pos {
-                let x = rand(tick);
-                let y = rand(x);
-                self.fruit_pos = [x as u32 % CELLS, y as u32 % CELLS];
+            if self.pos == self.fruit_pos() {
                 self.score += 1;
             }
 
-            for i in (0..self.tail.len() - 1).rev() {
-                self.tail[i + 1] = self.tail[i];
-            }
+            self.tail.rotate_right(1);
             self.tail[0] = Turn::Straight;
         }
 
@@ -345,9 +340,10 @@ impl Data {
         }
 
         // fruit
+        let fruit = self.fruit_pos();
         output.rect(
-            (self.fruit_pos[0] * CELL) as i32,
-            (self.fruit_pos[1] * CELL + SCORE_H) as i32,
+            (fruit[0] * CELL) as i32,
+            (fruit[1] * CELL + SCORE_H) as i32,
             CELL,
             CELL,
             [0, 255, 0],
@@ -383,13 +379,13 @@ mod tests {
             .into_iter()
             .map(Into::<u128>::into)
             .product::<u128>();
-        let available = (u64::MAX as u128 / product) - 1;
-        let bits: f64 = (product as f64).log2();
+        let available = u64::MAX as u128 / product;
+        let bits: f64 = (available as f64).log2();
         assert_eq!(
-            available, 0,
+            available, 1,
             "you are wasting {bits} bits, {available} available values"
         );
-        // dubious correctness ---^, its at least close correct
+        // dubious correctness ---^, it's at least close to correct
     }
 
     #[test]
